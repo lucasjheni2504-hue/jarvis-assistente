@@ -1,0 +1,973 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>JARVIS</title>
+
+<style>
+*{box-sizing:border-box}
+
+body{
+    margin:0;
+    background:#030811;
+    color:#00d9ff;
+    font-family:Arial,sans-serif;
+    min-height:100vh;
+    display:flex;
+    justify-content:center;
+    align-items:center;
+}
+
+.container{
+    width:92%;
+    max-width:520px;
+    text-align:center;
+}
+
+h1{
+    letter-spacing:7px;
+    text-shadow:0 0 15px #00d9ff;
+}
+
+.orb{
+    width:180px;
+    height:180px;
+    margin:25px auto;
+    border-radius:50%;
+    border:3px solid #00d9ff;
+    box-shadow:
+        0 0 20px #00d9ff,
+        0 0 60px #006eff,
+        inset 0 0 35px #006eff;
+    display:flex;
+    justify-content:center;
+    align-items:center;
+    animation:pulsar 2s infinite;
+}
+
+.orb::before{
+    content:"";
+    width:85px;
+    height:85px;
+    border-radius:50%;
+    border:2px solid #00d9ff;
+    box-shadow:0 0 30px #00d9ff;
+}
+
+@keyframes pulsar{
+    0%,100%{transform:scale(1)}
+    50%{transform:scale(1.06)}
+}
+
+button{
+    background:transparent;
+    color:#00d9ff;
+    border:2px solid #00d9ff;
+    padding:13px 22px;
+    border-radius:30px;
+    margin:6px;
+    font-size:16px;
+    box-shadow:0 0 12px #00d9ff;
+}
+
+button:active{
+    transform:scale(.95);
+    background:#00d9ff;
+    color:#030811;
+}
+
+#status{
+    margin:15px;
+    color:#8eeeff;
+}
+
+#conversation{
+    margin-top:20px;
+    padding:15px;
+    border:1px solid #006eff;
+    border-radius:15px;
+    min-height:100px;
+    max-height:260px;
+    overflow-y:auto;
+    text-align:left;
+    background:rgba(0,40,80,.25);
+}
+
+.user{
+    color:white;
+    margin:8px 0;
+}
+
+.jarvis{
+    color:#00d9ff;
+    margin:8px 0;
+}
+</style>
+</head>
+
+<body>
+
+<div class="container">
+
+<h1>JARVIS</h1>
+
+<div class="orb"></div>
+
+<div id="status">Sistemas online.</div>
+
+<button onclick="falar()">🎙️ FALAR</button>
+<button onclick="mostrarMemoria()">🧠 MEMÓRIA</button>
+<button onclick="obterLocalizacao()">📍 LOCAL</button>
+
+<div id="conversation">
+<div class="jarvis">
+🤖 JARVIS: Olá. Sistemas online. Como posso ajudar?
+</div>
+</div>
+
+</div>
+
+<script>
+
+const SpeechRecognition =
+window.SpeechRecognition ||
+window.webkitSpeechRecognition;
+
+let recognition = null;
+
+if(SpeechRecognition){
+
+    recognition = new SpeechRecognition();
+
+    recognition.lang = "pt-BR";
+    recognition.continuous = false;
+    recognition.interimResults = false;
+
+    recognition.onstart = function(){
+        document.getElementById("status").innerText =
+        "🎙️ Estou ouvindo...";
+    };
+
+    recognition.onend = function(){
+        document.getElementById("status").innerText =
+        "Sistemas online.";
+    };
+
+    recognition.onerror = function(event){
+        document.getElementById("status").innerText =
+        "Erro: " + event.error;
+    };
+
+    recognition.onresult = function(event){
+
+        const texto =
+        event.results[0][0].transcript;
+
+        mostrarUsuario(texto);
+
+        responder(texto);
+    };
+
+}else{
+
+    document.getElementById("status").innerText =
+    "Reconhecimento de voz indisponível.";
+
+}
+
+
+/* =========================
+   VOZ
+========================= */
+
+function falar(){
+
+    if(!recognition){
+
+        responderTexto(
+        "Seu navegador não suporta reconhecimento de voz."
+        );
+
+        return;
+    }
+
+    try{
+
+        recognition.start();
+
+    }catch(erro){
+
+        console.log("Microfone já iniciado.");
+
+    }
+}
+
+
+function falarTexto(texto){
+
+    const voz =
+    new SpeechSynthesisUtterance(texto);
+
+    voz.lang = "pt-BR";
+    voz.rate = .95;
+    voz.pitch = 1;
+
+    speechSynthesis.cancel();
+
+    speechSynthesis.speak(voz);
+}
+
+
+/* =========================
+   MEMÓRIA
+========================= */
+
+function pegarMemoria(){
+
+    try{
+
+        return JSON.parse(
+            localStorage.getItem("jarvisMemoria")
+        ) || {};
+
+    }catch{
+
+        return {};
+
+    }
+
+}
+
+
+function salvarMemoria(chave,valor){
+
+    const memoria = pegarMemoria();
+
+    memoria[chave] = valor;
+
+    localStorage.setItem(
+        "jarvisMemoria",
+        JSON.stringify(memoria)
+    );
+
+}
+
+
+/* =========================
+   NORMALIZAÇÃO
+========================= */
+
+function normalizar(texto){
+
+    return texto
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g,"")
+    .replace(/[?!.,;:]/g,"")
+    .trim();
+
+}
+
+
+/* =========================
+   APRENDER
+========================= */
+
+function aprender(texto){
+
+    let frase = texto.trim();
+
+    frase = frase.replace(
+        /^jarvis[\s,:-]*/i,
+        ""
+    ).trim();
+
+    let normal = normalizar(frase);
+
+    const comandos = [
+
+        "lembre que",
+        "lembra que",
+        "guarde que",
+        "guarda que",
+        "memorize que",
+        "memoriza que",
+        "salve que",
+        "salva que",
+        "lembre",
+        "guarde",
+        "memorize"
+
+    ];
+
+    for(const comando of comandos){
+
+        if(normal.startsWith(comando)){
+
+            frase =
+            frase.substring(comando.length).trim();
+
+            normal = normalizar(frase);
+
+            break;
+        }
+
+    }
+
+    const partes =
+    frase.split(/\s+(?:é|e|eh|=)\s+/i);
+
+    if(partes.length < 2){
+
+        return false;
+
+    }
+
+    let chave =
+    partes[0].trim();
+
+    let valor =
+    partes.slice(1).join(" é ").trim();
+
+    if(chave.length < 2 || valor.length < 1){
+
+        return false;
+
+    }
+
+    salvarMemoria(chave,valor);
+
+    responderTexto(
+        "Entendido. Vou lembrar que " +
+        chave +
+        " é " +
+        valor +
+        "."
+    );
+
+    return true;
+
+}
+
+
+/* =========================
+   PROCURAR MEMÓRIA
+========================= */
+
+function procurarMemoria(pergunta){
+
+    const memoria = pegarMemoria();
+
+    const chaves = Object.keys(memoria);
+
+    if(!chaves.length){
+
+        responderTexto(
+            "Minha memória ainda está vazia."
+        );
+
+        return true;
+
+    }
+
+    const perguntaNormal =
+    normalizar(pergunta);
+
+    let melhor = null;
+
+    let pontosMax = 0;
+
+    for(const chave of chaves){
+
+        const chaveNormal =
+        normalizar(chave);
+
+        let pontos = 0;
+
+        if(
+            perguntaNormal.includes(chaveNormal)
+        ){
+
+            pontos += 10;
+
+        }
+
+        const palavras =
+        chaveNormal.split(/\s+/);
+
+        for(const palavra of palavras){
+
+            if(
+                palavra.length > 2 &&
+                perguntaNormal.includes(palavra)
+            ){
+
+                pontos++;
+
+            }
+
+        }
+
+        if(pontos > pontosMax){
+
+            pontosMax = pontos;
+
+            melhor = chave;
+
+        }
+
+    }
+
+    if(melhor && pontosMax >= 1){
+
+        responderTexto(
+            "Sim. Eu lembro que " +
+            melhor +
+            " é " +
+            memoria[melhor] +
+            "."
+        );
+
+        return true;
+
+    }
+
+    return false;
+
+}
+
+
+/* =========================
+   MOSTRAR MEMÓRIA
+========================= */
+
+function mostrarMemoria(){
+
+    const memoria = pegarMemoria();
+
+    const chaves =
+    Object.keys(memoria);
+
+    if(!chaves.length){
+
+        responderTexto(
+            "Minha memória está vazia."
+        );
+
+        return;
+
+    }
+
+    let resposta =
+    "Eu lembro de: ";
+
+    chaves.forEach(function(chave,i){
+
+        resposta +=
+        chave +
+        " é " +
+        memoria[chave];
+
+        if(i < chaves.length - 1){
+
+            resposta += "; ";
+
+        }
+
+    });
+
+    responderTexto(resposta);
+
+}
+
+
+/* =========================
+   LOCALIZAÇÃO
+========================= */
+
+function obterLocalizacao(){
+
+    if(!navigator.geolocation){
+
+        responderTexto(
+            "Seu navegador não possui localização."
+        );
+
+        return;
+
+    }
+
+    responderTexto(
+        "Solicitando sua localização."
+    );
+
+    navigator.geolocation.getCurrentPosition(
+
+        function(posicao){
+
+            const lat =
+            posicao.coords.latitude;
+
+            const lon =
+            posicao.coords.longitude;
+
+            responderTexto(
+                "Localização obtida. " +
+                "Latitude " +
+                lat.toFixed(3) +
+                " e longitude " +
+                lon.toFixed(3) +
+                "."
+            );
+
+        },
+
+        function(){
+
+            responderTexto(
+                "Não consegui acessar sua localização. " +
+                "Verifique a permissão do navegador."
+            );
+
+        }
+
+    );
+
+}
+
+
+/* =========================
+   CALCULADORA
+========================= */
+
+function calcular(texto){
+
+    let expressao =
+    normalizar(texto);
+
+    expressao =
+    expressao
+    .replace(/quanto e/g,"")
+    .replace(/calcule/g,"")
+    .replace(/calcular/g,"")
+    .replace(/qual o resultado de/g,"")
+    .replace(/qual o resultado/g,"")
+    .trim();
+
+    expressao =
+    expressao
+    .replace(/vezes/g,"*")
+    .replace(/multiplicado por/g,"*")
+    .replace(/dividido por/g,"/")
+    .replace(/dividir por/g,"/")
+    .replace(/mais/g,"+")
+    .replace(/menos/g,"-")
+    .replace(/x/g,"*");
+
+    if(!/[0-9]/.test(expressao)){
+
+        return false;
+
+    }
+
+    if(!/[+\-*/]/.test(expressao)){
+
+        return false;
+
+    }
+
+    if(
+        !/^[0-9+\-*/().\s]+$/.test(expressao)
+    ){
+
+        return false;
+
+    }
+
+    try{
+
+        const resultado =
+        Function(
+            '"use strict"; return (' +
+            expressao +
+            ')'
+        )();
+
+        if(Number.isFinite(resultado)){
+
+            responderTexto(
+                "O resultado é " +
+                resultado
+            );
+
+            return true;
+
+        }
+
+    }catch{}
+
+    return false;
+
+}
+
+
+/* =========================
+   SITES
+========================= */
+
+function abrirSite(texto){
+
+    const comando =
+    normalizar(texto);
+
+    if(
+        comando.includes("youtube") ||
+        comando.includes("abrir youtube")
+    ){
+
+        window.open(
+            "https://www.youtube.com",
+            "_blank"
+        );
+
+        responderTexto(
+            "Abrindo o YouTube."
+        );
+
+        return true;
+
+    }
+
+
+    if(
+        comando.includes("google maps") ||
+        comando.includes("mapa") ||
+        comando.includes("maps")
+    ){
+
+        window.open(
+            "https://maps.google.com",
+            "_blank"
+        );
+
+        responderTexto(
+            "Abrindo o Google Maps."
+        );
+
+        return true;
+
+    }
+
+
+    if(
+        comando.includes("google")
+    ){
+
+        window.open(
+            "https://www.google.com",
+            "_blank"
+        );
+
+        responderTexto(
+            "Abrindo o Google."
+        );
+
+        return true;
+
+    }
+
+    return false;
+
+}
+
+
+/* =========================
+   HORA
+========================= */
+
+function falarHora(){
+
+    const agora =
+    new Date();
+
+    const hora =
+    agora.toLocaleTimeString(
+        "pt-BR",
+        {
+            hour:"2-digit",
+            minute:"2-digit"
+        }
+    );
+
+    responderTexto(
+        "Agora são " +
+        hora +
+        "."
+    );
+
+}
+
+
+/* =========================
+   DATA
+========================= */
+
+function falarData(){
+
+    const agora =
+    new Date();
+
+    const data =
+    agora.toLocaleDateString(
+        "pt-BR",
+        {
+            day:"2-digit",
+            month:"long",
+            year:"numeric"
+        }
+    );
+
+    responderTexto(
+        "Hoje é " +
+        data +
+        "."
+    );
+
+}
+
+
+/* =========================
+   RESPOSTA PRINCIPAL
+========================= */
+
+function responder(texto){
+
+    const comando =
+    normalizar(texto);
+
+
+    /* SAUDAÇÃO */
+
+    if(
+        comando === "oi" ||
+        comando === "ola" ||
+        comando.includes("oi jarvis") ||
+        comando.includes("ola jarvis")
+    ){
+
+        responderTexto(
+            "Olá. Sistemas online. Como posso ajudar?"
+        );
+
+        return;
+
+    }
+
+
+    /* NOME */
+
+    if(
+        comando.includes("seu nome") ||
+        comando.includes("quem e voce") ||
+        comando.includes("quem voce e")
+    ){
+
+        responderTexto(
+            "Meu nome é JARVIS. " +
+            "Ainda estou em desenvolvimento."
+        );
+
+        return;
+
+    }
+
+
+    /* MEMÓRIA */
+
+    if(
+        comando.includes("o que voce lembra") ||
+        comando.includes("o que voce sabe sobre mim") ||
+        comando.includes("mostre sua memoria") ||
+        comando === "memoria"
+    ){
+
+        mostrarMemoria();
+
+        return;
+
+    }
+
+
+    /* CONSULTAR MEMÓRIA */
+
+    if(
+        comando.includes("qual") ||
+        comando.includes("quem") ||
+        comando.includes("voce lembra") ||
+        comando.includes("voce sabe") ||
+        comando.includes("lembra")
+    ){
+
+        if(procurarMemoria(texto)){
+
+            return;
+
+        }
+
+    }
+
+
+    /* APRENDER */
+
+    if(aprender(texto)){
+
+        return;
+
+    }
+
+
+    /* HORA */
+
+    if(
+        comando.includes("hora") ||
+        comando.includes("que horas") ||
+        comando.includes("me diz a hora") ||
+        comando.includes("horas sao")
+    ){
+
+        falarHora();
+
+        return;
+
+    }
+
+
+    /* DATA */
+
+    if(
+        comando.includes("data") ||
+        comando.includes("que dia") ||
+        comando.includes("dia de hoje") ||
+        comando.includes("qual a data")
+    ){
+
+        falarData();
+
+        return;
+
+    }
+
+
+    /* LOCALIZAÇÃO */
+
+    if(
+        comando.includes("onde eu estou") ||
+        comando.includes("onde estou") ||
+        comando.includes("minha localizacao") ||
+        comando.includes("minha local") ||
+        comando.includes("qual minha localizacao") ||
+        comando.includes("voce sabe onde eu estou")
+    ){
+
+        obterLocalizacao();
+
+        return;
+
+    }
+
+
+    /* CALCULADORA */
+
+    if(
+        comando.includes("calcule") ||
+        comando.includes("quanto") ||
+        comando.includes("resultado") ||
+        comando.includes("vezes") ||
+        comando.includes("dividido") ||
+        comando.includes("multiplicado")
+    ){
+
+        if(calcular(texto)){
+
+            return;
+
+        }
+
+    }
+
+
+    /* SITES */
+
+    if(abrirSite(texto)){
+
+        return;
+
+    }
+
+
+    /* FALLBACK */
+
+    responderTexto(
+        "Ainda não sei responder isso. " +
+        "Podemos me ensinar essa função."
+    );
+
+}
+
+
+/* =========================
+   INTERFACE
+========================= */
+
+function mostrarUsuario(texto){
+
+    const conversa =
+    document.getElementById(
+        "conversation"
+    );
+
+    const div =
+    document.createElement("div");
+
+    div.className = "user";
+
+    div.innerText =
+    "Você: " + texto;
+
+    conversa.appendChild(div);
+
+    conversa.scrollTop =
+    conversa.scrollHeight;
+
+}
+
+
+function responderTexto(texto){
+
+    const conversa =
+    document.getElementById(
+        "conversation"
+    );
+
+    const div =
+    document.createElement("div");
+
+    div.className = "jarvis";
+
+    div.innerText =
+    "🤖 JARVIS: " + texto;
+
+    conversa.appendChild(div);
+
+    conversa.scrollTop =
+    conversa.scrollHeight;
+
+    falarTexto(texto);
+
+}
+
+</script>
+
+</body>
+</html>
